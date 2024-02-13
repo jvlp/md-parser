@@ -1,15 +1,11 @@
-use std::iter::repeat;
+use regex::Regex;
 
 
 #[derive(Debug)]
 pub(crate) enum Token {
+    Blank,
     Paragraph(Text),
-    H1(Text),
-    H2(Text),
-    H3(Text),
-    H4(Text),
-    H5(Text),
-    H6(Text),
+    Header(u8, Text),
 }
 
 #[derive(Debug)]
@@ -21,8 +17,8 @@ pub(crate) enum Text {
 
 impl Text {
     fn new(text: String) -> Self {
-        let bold_pattern = regex::Regex::new(r"^(\*\*|--|__).*(\*\*|--|__)$").unwrap();
-        let italic_pattern = regex::Regex::new(r"^(\*|-|_).*(\*|-|_)$").unwrap();
+        let bold_pattern = Regex::new(r"^(\*\*|--|__).*(\*\*|--|__)$").unwrap();
+        let italic_pattern = Regex::new(r"^(\*|-|_).*(\*|-|_)$").unwrap();
         
         if bold_pattern.is_match(&text) {
             Text::Bold(text)
@@ -54,26 +50,23 @@ impl Tokenizer {
         loop {
             match chars.next() {
                 Some('#') => {
-                    let mut count = 1;
-                    while let Some('#') = chars.next() {
-                        count += 1;
-                    }
-                    let content: String = chars.collect();
-                    return match count {
-                        1 => Token::H1(Text::new(content)),
-                        2 => Token::H2(Text::new(content)),
-                        3 => Token::H3(Text::new(content)),
-                        4 => Token::H4(Text::new(content)),
-                        5 => Token::H5(Text::new(content)),
-                        6 => Token::H6(Text::new(content)),
-                        _ => Token::Paragraph(Text::new(repeat("#").take(count).collect::<String>()+ " " + &content))
+                    let header_pattern = Regex::new(r"^(#{1,6})[^#]\s*(.+)$").unwrap();
+                    
+                    let caps = match header_pattern.captures(&self.line[self.cursor..]) {
+                        Some(caps) => caps,
+                        None => return Token::Paragraph(Text::new(self.line.clone())),
                     };
+
+                    let level = caps[1].len() as u8;
+                    let text = Text::new(caps[2].to_owned());
+
+                    return Token::Header(level, text)
                 }
                 Some(_) => {
-                    self.cursor += 1;
+                    return Token::Paragraph(Text::new(self.line.clone()))
                 }
                 None => {
-                    return Token::H1(Text::new("".to_string()));
+                    return Token::Blank
                 }
             }
         }
