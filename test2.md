@@ -21,6 +21,10 @@ ___
 # **#bold#**
 ~~strikethrough~~
 
+``` python
+    print("teste")
+```
+
 **_bold and italic_**
 *__bold and italic__*
 
