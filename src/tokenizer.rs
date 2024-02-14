@@ -10,6 +10,8 @@ pub(crate) enum Token {
     Text(Text),
 }
 
+// TODO: refactor to work with separate tokens for opening and closing tags
+// this will be very useful when dealing with nested tags
 #[derive(Debug)]
 pub(crate) enum Text {
     Regular(String),
