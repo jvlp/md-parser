@@ -24,14 +24,23 @@ enum State {
     End,
 }
 
-impl Text {
-    fn new(text: String) -> Self {
-        let bold_pattern = Regex::new(r"^(\*\*|--|__).*(\*\*|--|__)$").unwrap();
-        let italic_pattern = Regex::new(r"^(\*|-|_).*(\*|-|_)$").unwrap();
+struct TextParser {
+    bold_pattern: Regex,
+    italic_pattern: Regex,
+}
 
-        if bold_pattern.is_match(&text) {
+impl TextParser {
+    fn new() -> Self {
+        Self {
+            bold_pattern: Regex::new(r"^(\*\*|--|__).*(\*\*|--|__)$").unwrap(),
+            italic_pattern: Regex::new(r"^(\*|-|_).*(\*|-|_)$").unwrap(),
+        }
+    }
+
+    fn parse(&self, text: String) -> Text {
+        if self.bold_pattern.is_match(&text) {
             Text::Bold(text)
-        } else if italic_pattern.is_match(&text) {
+        } else if self.italic_pattern.is_match(&text) {
             Text::Italic(text)
         } else {
             Text::Regular(text)
@@ -43,11 +52,17 @@ pub(crate) struct Tokenizer {
     line: String,
     cursor: usize,
     state: State,
+    text_parser: TextParser,
 }
 
 impl Tokenizer {
     pub(crate) fn new(line: String) -> Self {
-        Self { line, cursor: 0, state: State::Start }
+        Self {
+            line,
+            cursor: 0,
+            state: State::Start,
+            text_parser: TextParser::new()
+        }
     }
 
     pub(crate) fn next(&mut self) -> Option<Token> {
@@ -71,7 +86,10 @@ impl Tokenizer {
                     return Some(Token::Header(level));
                 }
                 // Horizontal Rule or Unordered List
-                (Some(' ') | Some('\t') | Some('-') | Some('_') | Some('*') | Some('+'), State::Start) => {
+                (
+                    Some(' ') | Some('\t') | Some('-') | Some('_') | Some('*') | Some('+'),
+                    State::Start,
+                ) => {
                     if self.line == "---" || self.line == "___" || self.line == "***" {
                         self.state = State::End;
                         return Some(Token::HorizontalRule);
@@ -82,8 +100,8 @@ impl Tokenizer {
                     match list_pattern.captures(&self.line) {
                         Some(caps) => {
                             self.cursor += caps[0].len() - 1;
-                            return Some(Token::UnorderedList)
-                        },
+                            return Some(Token::UnorderedList);
+                        }
                         None => {
                             return Some(Token::Paragraph);
                         }
@@ -97,11 +115,15 @@ impl Tokenizer {
                 // Text
                 (Some(_), State::Text) => {
                     // TODO: consider case when Text does not take the remaining characters
-                    
-                    let content = if self.cursor == 0 {self.line.clone()} else {String::from_iter(chars)};
-                    self.cursor = self.line.len();
-                    return Some(Token::Text(Text::new(content)));
 
+                    let content = if self.cursor == 0 {
+                        self.line.clone()
+                    } else {
+                        String::from_iter(chars)
+                    };
+                    self.cursor = self.line.len();
+                    let text = self.text_parser.parse(content);
+                    return Some(Token::Text(text));
                 }
                 // Blank line
                 (None, State::Start) => {
