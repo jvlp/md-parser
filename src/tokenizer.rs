@@ -74,6 +74,13 @@ impl Tokenizer {
                         return Some(token);
                     }
                 }
+                ('`', State::Start) => {
+                    if self.line.starts_with("```") {
+                        let language = self.line.get(3..).unwrap_or_default().trim_start();
+                        self.state = State::End;
+                        return Some(Token::CodeBlock(language.to_string()));
+                    }
+                }
                 (_, State::Start) => {
                     self.state = State::Process;
                     return Some(Token::Paragraph);
