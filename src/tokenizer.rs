@@ -109,68 +109,77 @@ impl Tokenizer {
     pub(crate) fn next(&mut self) -> Option<Token> {
         let mut chars = self.line.chars();
         loop {
-            match (chars.nth(self.cursor), self.state) {
-                // H1 ~ H6
-                (Some('#'), State::Start) => {
-                    self.state = State::Text;
+            let Some(next_char) = chars.nth(self.cursor) else {
+                if self.state != State::Start {
+                    return None;
+                };
+                self.state = State::End;
+                return Some(Token::Blank);
+            };
 
-                    let caps = match self.header_pattern.captures(&self.line) {
-                        Some(caps) => caps,
-                        None => {
-                            return Some(Token::Paragraph);
-                        }
-                    };
-                    let level = caps[1].len() as u8;
-                    self.cursor += caps[1].len() + 1;
-
-                    return Some(Token::Header(level));
-                }
-                // Horizontal Rule or Unordered List
-                (
-                    Some(' ') | Some('\t') | Some('-') | Some('_') | Some('*') | Some('+'),
-                    State::Start,
-                ) => {
-                    if self.line == "---" || self.line == "___" || self.line == "***" {
-                        self.state = State::End;
-                        return Some(Token::HorizontalRule);
+            match (next_char, self.state) {
+                ('#', State::Start) => return Some(self.handle_header()),
+                (' ' | '\t' | '-' | '_' | '*' | '+', State::Start) => {
+                    return if let Some(token) = self.handle_horizontal_rule() {
+                        Some(token)
+                    } else {
+                        Some(self.handle_ulist())
                     }
-
-                    self.state = State::Text;
-                    return match self.ulist_pattern.captures(&self.line) {
-                        Some(caps) => {
-                            self.cursor += caps[0].len();
-                            Some(Token::UnorderedList)
-                        }
-                        None => Some(Token::Paragraph),
-                    };
                 }
-                // Paragraph
-                (Some(_), State::Start) => {
+                (_, State::Start) => {
                     self.state = State::Text;
                     return Some(Token::Paragraph);
                 }
-                // Text
-                (Some(_), State::Text) => {
-                    let content = if self.cursor == 0 {
-                        self.line.clone()
-                    } else {
-                        self.line.get(self.cursor..).unwrap_or_default().to_owned()
-                    };
-
-                    let (len, text) = self.text_parser.parse(content);
-                    self.cursor += len;
-                    return Some(Token::Text(text));
-                }
-                // Blank line
-                (None, State::Start) => {
-                    self.state = State::End;
-                    return Some(Token::Blank);
-                }
-                // End of line
-                _ => {
-                    return None;
-                }
+                (_, State::Text) => return Some(self.handle_text()),
+                (_, _) => return None,
             }
         }
+    }
+
+    fn handle_header(&mut self) -> Token {
+        self.state = State::Text;
+
+        let caps = match self.header_pattern.captures(&self.line) {
+            Some(caps) => caps,
+            None => {
+                return Token::Paragraph;
+            }
+        };
+        let level = caps[1].len() as u8;
+        self.cursor += caps[1].len() + 1;
+
+        Token::Header(level)
+    }
+
+    fn handle_ulist(&mut self) -> Token {
+        self.state = State::Text;
+        match self.ulist_pattern.captures(&self.line) {
+            Some(caps) => {
+                self.cursor += caps[0].len();
+                Token::UnorderedList
+            }
+            None => Token::Paragraph,
+        }
+    }
+
+    fn handle_horizontal_rule(&mut self) -> Option<Token> {
+        if self.line != "---" && self.line != "___" && self.line != "***" {
+            return None;
+        }
+        println!("horizontal rule");
+        self.state = State::End;
+        Some(Token::HorizontalRule)
+    }
+
+    fn handle_text(&mut self) -> Token {
+        let content = if self.cursor == 0 {
+            self.line.clone()
+        } else {
+            self.line.get(self.cursor..).unwrap_or_default().to_owned()
+        };
+
+        let (len, text) = self.text_parser.parse(content);
+        self.cursor += len;
+        Token::Text(text)
     }
 }
