@@ -86,33 +86,18 @@ impl Tokenizer {
                     return Some(Token::Paragraph);
                 }
                 ('_' | '*' | '~', State::Process) => {
-                    let one_ahead = self.line.chars().nth(self.cursor + 1);
-
-                    match one_ahead {
-                        Some(c) if c == current && c == '~' => {
-                            self.cursor += 2;
-                            return Some(Token::Strikethrough);
-                        }
-                        Some(c) if c == current => {
-                            self.cursor += 2;
-                            return Some(Token::Bold);
-                        }
-                        _ => {
-                            self.cursor += 1;
-                            return Some(Token::Italic);
-                        }
-                    }
+                    return self.handle_text_modifier();
                 }
                 (_, State::Process) => {
                     self.state = State::Text;
                     literal_start = self.cursor;
                 }
+                ('_' | '*' | '~', State::Text) => {
+                    let literal = self.line[literal_start..self.cursor].to_string();
+                    self.state = State::Process;
+                    return Some(Token::Literal(literal));
+                }
                 (_, State::Text) => {
-                    if current == '_' || current == '*' || current == '~' {
-                        let literal = self.line[literal_start..self.cursor].to_string();
-                        self.state = State::Process;
-                        return Some(Token::Literal(literal));
-                    }
                     self.cursor += 1;
                 }
                 (_, _) => {
@@ -123,11 +108,8 @@ impl Tokenizer {
     }
 
     fn handle_header(&mut self) -> Token {
-        let caps = match self.header_pattern.captures(&self.line) {
-            Some(caps) => caps,
-            None => {
-                return Token::Paragraph;
-            }
+        let Some(caps) = self.header_pattern.captures(&self.line) else {
+            return Token::Paragraph;
         };
 
         let level = caps[1].len() as u8;
@@ -136,14 +118,26 @@ impl Tokenizer {
         Token::Header(level)
     }
 
-    fn handle_ulist(&mut self) -> Option<Token> {
-        match self.ulist_pattern.captures(&self.line) {
-            Some(caps) => {
-                self.cursor += caps[0].len();
-                Some(Token::UnorderedList)
+    fn handle_text_modifier(&mut self) -> Option<Token> {
+        let current = self.line.chars().nth(self.cursor)?;
+        let next = self.line.chars().nth(self.cursor + 1)?;
+
+        self.cursor += 2;
+        match (current, next) {
+            ('~', '~') => Some(Token::Strikethrough),
+            ('*', '*') => Some(Token::Bold),
+            ('_', '_') => Some(Token::Bold),
+            _ => {
+                self.cursor -= 1;
+                Some(Token::Italic)
             }
-            None => None,
         }
+    }
+
+    fn handle_ulist(&mut self) -> Option<Token> {
+        let caps = self.ulist_pattern.captures(&self.line)?;
+        self.cursor += caps[0].len();
+        Some(Token::UnorderedList)
     }
 
     fn handle_horizontal_rule(&mut self) -> Option<Token> {
