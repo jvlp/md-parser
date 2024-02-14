@@ -15,6 +15,7 @@ pub(crate) enum Text {
     Regular(String),
     Bold(String),
     Italic(String),
+    BoldItalic(String),
 }
 
 #[derive(Eq, PartialEq, Clone, Copy)]
@@ -25,26 +26,55 @@ enum State {
 }
 
 struct TextParser {
+    regular_pattern: Regex,
     bold_pattern: Regex,
     italic_pattern: Regex,
+    bold_italic_pattern: Regex,
 }
 
 impl TextParser {
     fn new() -> Self {
         Self {
-            bold_pattern: Regex::new(r"^(\*\*|--|__).*(\*\*|--|__)$").unwrap(),
-            italic_pattern: Regex::new(r"^(\*|-|_).*(\*|-|_)$").unwrap(),
+            regular_pattern: Regex::new(r"^[^\*-_]+").unwrap(),
+            bold_pattern: Regex::new(r"(^__.*__)|(^\*\*.*\*\*)").unwrap(),
+            italic_pattern: Regex::new(r"(^_.*_)|(^\*.*\*)").unwrap(),
+            bold_italic_pattern: Regex::new(r"^_(\*\*.*\*\*)_|^\*(__.*__)\*|^__(\*.*\*)__|^\*\*(_.*_)\*\*").unwrap(),
         }
     }
 
-    fn parse(&self, text: String) -> Text {
-        if self.bold_pattern.is_match(&text) {
-            Text::Bold(text)
-        } else if self.italic_pattern.is_match(&text) {
-            Text::Italic(text)
-        } else {
-            Text::Regular(text)
+    fn parse(&self, text: String) -> (usize, Text) {
+        match self.regular_pattern.captures(&text) {
+            Some(caps) => {
+                let mtch = caps.get(0).unwrap();
+                return (mtch.end(), Text::Regular(text[..mtch.end()].to_owned()))
+            },
+            None => {}
         }
+        
+        match self.bold_italic_pattern.captures(&text) {
+            Some(caps) => {
+                let mtch = caps.get(0).unwrap();
+                return (mtch.end(), Text::BoldItalic(text[3..mtch.end()-3].to_owned()))
+            },
+            None => {}
+        }
+
+        match self.bold_pattern.captures(&text) {
+            Some(caps) => {
+                let mtch = caps.get(0).unwrap();
+                return (mtch.end(), Text::Bold(text[2..mtch.end()-2].to_owned()))
+            },
+            None => {}
+        }
+
+        match self.italic_pattern.captures(&text) {
+            Some(caps) => {
+                let mtch = caps.get(0).unwrap();
+                return (mtch.end(), Text::Italic(text[1..mtch.end()-1].to_owned()))
+            },
+            None => {}
+        };
+        (text.len(), Text::Regular(text))
     }
 }
 
@@ -66,9 +96,9 @@ impl Tokenizer {
     }
 
     pub(crate) fn next(&mut self) -> Option<Token> {
-        let mut chars = self.line.chars().skip(self.cursor);
+        let mut chars = self.line.chars();
         loop {
-            match (chars.next(), self.state) {
+            match (chars.nth(self.cursor), self.state) {
                 // H1 ~ H6
                 (Some('#'), State::Start) => {
                     self.state = State::Text;
@@ -81,7 +111,7 @@ impl Tokenizer {
                         }
                     };
                     let level = caps[1].len() as u8;
-                    self.cursor += caps[1].len();
+                    self.cursor += caps[1].len() + 1;
 
                     return Some(Token::Header(level));
                 }
@@ -114,20 +144,18 @@ impl Tokenizer {
                 }
                 // Text
                 (Some(_), State::Text) => {
-                    // TODO: consider case when Text does not take the remaining characters
-
                     let content = if self.cursor == 0 {
                         self.line.clone()
                     } else {
-                        String::from_iter(chars)
+                        self.line.get(self.cursor..).unwrap_or_default().to_owned()
                     };
-                    self.cursor = self.line.len();
-                    let text = self.text_parser.parse(content);
+
+                    let (len, text) = self.text_parser.parse(content);
+                    self.cursor += len;
                     return Some(Token::Text(text));
                 }
                 // Blank line
                 (None, State::Start) => {
-                    println!("Blank");
                     self.state = State::End;
                     return Some(Token::Blank);
                 }
