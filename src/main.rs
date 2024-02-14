@@ -1,5 +1,5 @@
 mod tokenizer;
-use std::{fs::File, io::{BufRead, BufReader}, path::Path};
+use std::{fs::File, io::{BufRead, BufReader}, path::Path, vec};
 use tokenizer::Tokenizer;
 fn main() {
     let arg  = std::env::args().last().unwrap();
@@ -12,9 +12,14 @@ fn main() {
             Ok(line) => line,
             Err(_) => continue,
         };
-        let mut tokenizer = Tokenizer::new(line);
-        let token = tokenizer.next();
-        println!("{:?}", token);
+        let mut tokenizer = Tokenizer::new(line.clone());
+        println!("line: {:?}", line);
+        let mut tokens = vec![];
+        while let Some(token) = tokenizer.next() {
+            tokens.push(token);
+            // println!("{:?}", token);
+        }
+        print!("{:?}\n", tokens);
     }
 }
 
