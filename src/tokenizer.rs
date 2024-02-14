@@ -5,7 +5,7 @@ pub(crate) enum Token {
     Blank,
     HorizontalRule,
     UnorderedList,
-    Paragraph(Text),
+    Paragraph,
     Header(u8),
     Text(Text),
 }
@@ -15,6 +15,13 @@ pub(crate) enum Text {
     Regular(String),
     Bold(String),
     Italic(String),
+}
+
+#[derive(Eq, PartialEq, Clone, Copy)]
+enum State {
+    Start,
+    Text,
+    End,
 }
 
 impl Text {
@@ -35,25 +42,27 @@ impl Text {
 pub(crate) struct Tokenizer {
     line: String,
     cursor: usize,
+    state: State,
 }
 
 impl Tokenizer {
     pub(crate) fn new(line: String) -> Self {
-        Self { line, cursor: 0 }
+        Self { line, cursor: 0, state: State::Start }
     }
 
     pub(crate) fn next(&mut self) -> Option<Token> {
         let mut chars = self.line.chars().skip(self.cursor);
         loop {
-            match (chars.next(), self.cursor) {
-                (Some('#'), 0) => {
+            match (chars.next(), self.state) {
+                // H1 ~ H6
+                (Some('#'), State::Start) => {
+                    self.state = State::Text;
                     let header_pattern = Regex::new(r"^(#{1,6})[^#]\s*(.+)$").unwrap();
 
                     let caps = match header_pattern.captures(&self.line) {
                         Some(caps) => caps,
                         None => {
-                            self.cursor += self.line.len();
-                            return Some(Token::Paragraph(Text::new(self.line.clone())));
+                            return Some(Token::Paragraph);
                         }
                     };
                     let level = caps[1].len() as u8;
@@ -61,41 +70,46 @@ impl Tokenizer {
 
                     return Some(Token::Header(level));
                 }
-                (Some(' ') | Some('\t') | Some('-') | Some('_') | Some('*') | Some('+'), 0) => {
+                // Horizontal Rule or Unordered List
+                (Some(' ') | Some('\t') | Some('-') | Some('_') | Some('*') | Some('+'), State::Start) => {
                     if self.line == "---" || self.line == "___" || self.line == "***" {
-                        self.cursor += self.line.len().saturating_sub(2);
+                        self.state = State::End;
                         return Some(Token::HorizontalRule);
                     }
-                    let list_pattern = Regex::new(r"^\s*(-|\*|\+){1}\s+").unwrap();
 
+                    self.state = State::Text;
+                    let list_pattern: Regex = Regex::new(r"^\s*(-|\*|\+){1}\s+").unwrap();
                     match list_pattern.captures(&self.line) {
                         Some(caps) => {
-                            self.cursor += caps[0].len().saturating_sub(1);
+                            self.cursor += caps[0].len() - 1;
                             return Some(Token::UnorderedList)
                         },
                         None => {
-                            self.cursor += self.line.len();
-                            return Some(Token::Paragraph(Text::new(self.line.clone())));
+                            return Some(Token::Paragraph);
                         }
                     };
                 }
-                (Some(_), _) => {
+                // Paragraph
+                (Some(_), State::Start) => {
+                    self.state = State::Text;
+                    return Some(Token::Paragraph);
+                }
+                // Text
+                (Some(_), State::Text) => {
                     // TODO: consider case when Text does not take the remaining characters
-                    let cursor = self.cursor;
-                    self.cursor += self.line.len();
-
-                    if cursor == 0 {
-                        return Some(Token::Paragraph(Text::new(self.line.clone())));
-                    }
                     
-                    let content =String::from_iter(chars);
+                    let content = if self.cursor == 0 {self.line.clone()} else {String::from_iter(chars)};
+                    self.cursor = self.line.len();
                     return Some(Token::Text(Text::new(content)));
 
                 }
-                (None, 0) => {
-                    self.cursor += 1;
+                // Blank line
+                (None, State::Start) => {
+                    println!("Blank");
+                    self.state = State::End;
                     return Some(Token::Blank);
                 }
+                // End of line
                 _ => {
                     return None;
                 }
