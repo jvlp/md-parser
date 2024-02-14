@@ -1,28 +1,30 @@
-# test
-## test
-### test
-#### test
-##### test
-###### test
-####### test
+# header 1
+## header 2
+### header 3
+#### header 4
+##### header 5
+###### header 6
+####### should be paragraph
 ---
-test
+text text
 ___
 
-+ test
-* test
-* **test**
-- test
-    + teste
-        * teste
++ ulist
+* ulist
+* **ulist**
+- ulist
+    + ulist
+        *       ulist
 ***
-# _test_
-# **test**
-# **#test#**
-**_test_**
-*__test__*
+# _italic_
+# **bold**
+# **#bold#**
+~~strikethrough~~
 
-__*test*__
-_**test**_
+**_bold and italic_**
+*__bold and italic__*
 
-memes _teste_ testes **teste**
+__*bold and italic*__
+_**bold and italic**_
+
+regular _italic_ ~~strikethrough~~ regular **bold** **_bold and italic_**

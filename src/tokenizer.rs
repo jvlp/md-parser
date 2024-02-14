@@ -38,61 +38,47 @@ impl TextParser {
     fn new() -> Self {
         Self {
             regular_pattern: Regex::new(r"^[^\*_~]+").unwrap(),
-            bold_pattern: Regex::new(r"(^__.*__)|(^\*\*.*\*\*)").unwrap(),
-            italic_pattern: Regex::new(r"(^_.*_)|(^\*.*\*)").unwrap(),
+            bold_pattern: Regex::new(r"(^__[^_]*__)|(^\*\*[^\*]*\*\*)").unwrap(),
+            italic_pattern: Regex::new(r"(^_[^_]*_)|(^\*[^\*]*\*)").unwrap(),
             bold_italic_pattern: Regex::new(
-                r"^_(\*\*.*\*\*)_|^\*(__.*__)\*|^__(\*.*\*)__|^\*\*(_.*_)\*\*",
+                r"^_(\*\*[^_\*]*\*\*)_|^\*(__[^_\*]*__)\*|^__(\*[^_\*]*\*)__|^\*\*(_[^_\*]*_)\*\*",
             )
             .unwrap(),
-            strikethrough_pattern: Regex::new(r"^~~.*~~").unwrap(),
+            strikethrough_pattern: Regex::new(r"^~~[^~]*~~").unwrap(),
         }
     }
 
     fn parse(&self, text: String) -> (usize, Text) {
-        match self.regular_pattern.captures(&text) {
-            Some(caps) => {
-                let mtch = caps.get(0).unwrap();
-                let end = mtch.end();
-                return (mtch.end(), Text::Regular(text[..end].to_owned()));
-            }
-            None => {}
+        if let Some(caps) = self.regular_pattern.captures(&text) {
+            let mtch = caps.get(0).unwrap();
+            let end = mtch.end();
+            return (mtch.end(), Text::Regular(text[..end].to_owned()));
         }
 
-        match self.bold_italic_pattern.captures(&text) {
-            Some(caps) => {
-                let mtch = caps.get(0).unwrap();
-                let end = mtch.end() - 3;
-                return (mtch.end(), Text::BoldItalic(text[3..end].to_owned()));
-            }
-            None => {}
+        if let Some(caps) = self.bold_italic_pattern.captures(&text) {
+            let mtch = caps.get(0).unwrap();
+            let end = mtch.end() - 3;
+            return (mtch.end(), Text::BoldItalic(text[3..end].to_owned()));
         }
 
-        match self.bold_pattern.captures(&text) {
-            Some(caps) => {
-                let mtch = caps.get(0).unwrap();
-                let end = mtch.end() - 2;
-                return (mtch.end(), Text::Bold(text[2..end].to_owned()));
-            }
-            None => {}
+        if let Some(caps) = self.bold_pattern.captures(&text) {
+            let mtch = caps.get(0).unwrap();
+            let end = mtch.end() - 2;
+            return (mtch.end(), Text::Bold(text[2..end].to_owned()));
         }
 
-        match self.italic_pattern.captures(&text) {
-            Some(caps) => {
-                let mtch = caps.get(0).unwrap();
-                let end = mtch.end() - 1;
-                return (mtch.end(), Text::Italic(text[1..end].to_owned()));
-            }
-            None => {}
-        };
+        if let Some(caps) = self.italic_pattern.captures(&text) {
+            let mtch = caps.get(0).unwrap();
+            let end = mtch.end() - 1;
+            return (mtch.end(), Text::Italic(text[1..end].to_owned()));
+        }
 
-        match self.strikethrough_pattern.captures(&text) {
-            Some(caps) => {
-                let mtch = caps.get(0).unwrap();
-                let end = mtch.end() - 2;
-                return (mtch.end(), Text::Strikethrough(text[2..end].to_owned()));
-            }
-            None => {}
-        };
+        if let Some(caps) = self.strikethrough_pattern.captures(&text) {
+            let mtch = caps.get(0).unwrap();
+            let end = mtch.end() - 2;
+            return (mtch.end(), Text::Strikethrough(text[2..end].to_owned()));
+        }
+
         (text.len(), Text::Regular(text))
     }
 }
@@ -148,14 +134,12 @@ impl Tokenizer {
                     }
 
                     self.state = State::Text;
-                    match self.ulist_pattern.captures(&self.line) {
+                    return match self.ulist_pattern.captures(&self.line) {
                         Some(caps) => {
                             self.cursor += caps[0].len();
-                            return Some(Token::UnorderedList);
+                            Some(Token::UnorderedList)
                         }
-                        None => {
-                            return Some(Token::Paragraph);
-                        }
+                        None => Some(Token::Paragraph),
                     };
                 }
                 // Paragraph
