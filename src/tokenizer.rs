@@ -102,6 +102,8 @@ pub(crate) struct Tokenizer {
     cursor: usize,
     state: State,
     text_parser: TextParser,
+    header_pattern: Regex,
+    ulist_pattern: Regex,
 }
 
 impl Tokenizer {
@@ -111,6 +113,8 @@ impl Tokenizer {
             cursor: 0,
             state: State::Start,
             text_parser: TextParser::new(),
+            header_pattern: Regex::new(r"^(#{1,6})[^#]\s*(.+)$").unwrap(),
+            ulist_pattern: Regex::new(r"^\s*(-|\*|\+){1}\s+").unwrap(),
         }
     }
 
@@ -121,9 +125,8 @@ impl Tokenizer {
                 // H1 ~ H6
                 (Some('#'), State::Start) => {
                     self.state = State::Text;
-                    let header_pattern = Regex::new(r"^(#{1,6})[^#]\s*(.+)$").unwrap();
 
-                    let caps = match header_pattern.captures(&self.line) {
+                    let caps = match self.header_pattern.captures(&self.line) {
                         Some(caps) => caps,
                         None => {
                             return Some(Token::Paragraph);
@@ -145,8 +148,7 @@ impl Tokenizer {
                     }
 
                     self.state = State::Text;
-                    let list_pattern: Regex = Regex::new(r"^\s*(-|\*|\+){1}\s+").unwrap();
-                    match list_pattern.captures(&self.line) {
+                    match self.ulist_pattern.captures(&self.line) {
                         Some(caps) => {
                             self.cursor += caps[0].len();
                             return Some(Token::UnorderedList);
