@@ -3,6 +3,8 @@ use regex::Regex;
 #[derive(Debug)]
 pub(crate) enum Token {
     Blank,
+    HorizontalRule,
+    UnorderedList,
     Paragraph(Text),
     Header(u8),
     Text(Text),
@@ -58,6 +60,17 @@ impl Tokenizer {
                     self.cursor += caps[1].len();
 
                     return Some(Token::Header(level));
+                }
+                (Some(' ') | Some('\t') | Some('-') | Some('_') | Some('*') | Some('+'), 0) => {
+                    if self.line == "---" || self.line == "___" || self.line == "***" {
+                        self.cursor += self.line.len();
+                        return Some(Token::HorizontalRule);
+                    }
+                    let list_pattern = Regex::new(r"^\s*(-|\*|\+){1}\s*").unwrap();
+                    if list_pattern.is_match(&self.line) {
+                        self.cursor += 1;
+                        return Some(Token::UnorderedList);
+                    }
                 }
                 (Some(_), _) => {
                     // TODO: consider case when Text does not take the remaining characters
