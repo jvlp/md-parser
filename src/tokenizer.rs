@@ -49,7 +49,7 @@ impl Tokenizer {
                 (Some('#'), 0) => {
                     let header_pattern = Regex::new(r"^(#{1,6})[^#]\s*(.+)$").unwrap();
 
-                    let caps = match header_pattern.captures(&self.line[self.cursor..]) {
+                    let caps = match header_pattern.captures(&self.line) {
                         Some(caps) => caps,
                         None => {
                             self.cursor += self.line.len();
@@ -63,14 +63,21 @@ impl Tokenizer {
                 }
                 (Some(' ') | Some('\t') | Some('-') | Some('_') | Some('*') | Some('+'), 0) => {
                     if self.line == "---" || self.line == "___" || self.line == "***" {
-                        self.cursor += self.line.len();
+                        self.cursor += self.line.len().saturating_sub(2);
                         return Some(Token::HorizontalRule);
                     }
-                    let list_pattern = Regex::new(r"^\s*(-|\*|\+){1}\s*").unwrap();
-                    if list_pattern.is_match(&self.line) {
-                        self.cursor += 1;
-                        return Some(Token::UnorderedList);
-                    }
+                    let list_pattern = Regex::new(r"^\s*(-|\*|\+){1}\s+").unwrap();
+
+                    match list_pattern.captures(&self.line) {
+                        Some(caps) => {
+                            self.cursor += caps[0].len().saturating_sub(1);
+                            return Some(Token::UnorderedList)
+                        },
+                        None => {
+                            self.cursor += self.line.len();
+                            return Some(Token::Paragraph(Text::new(self.line.clone())));
+                        }
+                    };
                 }
                 (Some(_), _) => {
                     // TODO: consider case when Text does not take the remaining characters
