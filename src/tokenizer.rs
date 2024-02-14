@@ -16,6 +16,7 @@ pub(crate) enum Text {
     Bold(String),
     Italic(String),
     BoldItalic(String),
+    Strikethrough(String),
 }
 
 #[derive(Eq, PartialEq, Clone, Copy)]
@@ -30,15 +31,17 @@ struct TextParser {
     bold_pattern: Regex,
     italic_pattern: Regex,
     bold_italic_pattern: Regex,
+    strikethrough_pattern: Regex,
 }
 
 impl TextParser {
     fn new() -> Self {
         Self {
-            regular_pattern: Regex::new(r"^[^\*-_]+").unwrap(),
+            regular_pattern: Regex::new(r"^[^\*_~]+").unwrap(),
             bold_pattern: Regex::new(r"(^__.*__)|(^\*\*.*\*\*)").unwrap(),
             italic_pattern: Regex::new(r"(^_.*_)|(^\*.*\*)").unwrap(),
             bold_italic_pattern: Regex::new(r"^_(\*\*.*\*\*)_|^\*(__.*__)\*|^__(\*.*\*)__|^\*\*(_.*_)\*\*").unwrap(),
+            strikethrough_pattern: Regex::new(r"^~~.*~~").unwrap(),
         }
     }
 
@@ -71,6 +74,14 @@ impl TextParser {
             Some(caps) => {
                 let mtch = caps.get(0).unwrap();
                 return (mtch.end(), Text::Italic(text[1..mtch.end()-1].to_owned()))
+            },
+            None => {}
+        };
+
+        match self.strikethrough_pattern.captures(&text) {
+            Some(caps) => {
+                let mtch = caps.get(0).unwrap();
+                return (mtch.end(), Text::Strikethrough(text[2..mtch.end()-2].to_owned()))
             },
             None => {}
         };
@@ -129,7 +140,7 @@ impl Tokenizer {
                     let list_pattern: Regex = Regex::new(r"^\s*(-|\*|\+){1}\s+").unwrap();
                     match list_pattern.captures(&self.line) {
                         Some(caps) => {
-                            self.cursor += caps[0].len() - 1;
+                            self.cursor += caps[0].len();
                             return Some(Token::UnorderedList);
                         }
                         None => {
