@@ -18,7 +18,7 @@ ___
 ***
 # _italic_
 # **bold**
-# **#bold#**
+# ~~**_#bold#_**~~
 ~~strikethrough~~
 
 ``` python
