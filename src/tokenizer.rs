@@ -40,7 +40,10 @@ impl TextParser {
             regular_pattern: Regex::new(r"^[^\*_~]+").unwrap(),
             bold_pattern: Regex::new(r"(^__.*__)|(^\*\*.*\*\*)").unwrap(),
             italic_pattern: Regex::new(r"(^_.*_)|(^\*.*\*)").unwrap(),
-            bold_italic_pattern: Regex::new(r"^_(\*\*.*\*\*)_|^\*(__.*__)\*|^__(\*.*\*)__|^\*\*(_.*_)\*\*").unwrap(),
+            bold_italic_pattern: Regex::new(
+                r"^_(\*\*.*\*\*)_|^\*(__.*__)\*|^__(\*.*\*)__|^\*\*(_.*_)\*\*",
+            )
+            .unwrap(),
             strikethrough_pattern: Regex::new(r"^~~.*~~").unwrap(),
         }
     }
@@ -49,40 +52,45 @@ impl TextParser {
         match self.regular_pattern.captures(&text) {
             Some(caps) => {
                 let mtch = caps.get(0).unwrap();
-                return (mtch.end(), Text::Regular(text[..mtch.end()].to_owned()))
-            },
+                let end = mtch.end();
+                return (mtch.end(), Text::Regular(text[..end].to_owned()));
+            }
             None => {}
         }
-        
+
         match self.bold_italic_pattern.captures(&text) {
             Some(caps) => {
                 let mtch = caps.get(0).unwrap();
-                return (mtch.end(), Text::BoldItalic(text[3..mtch.end()-3].to_owned()))
-            },
+                let end = mtch.end() - 3;
+                return (mtch.end(), Text::BoldItalic(text[3..end].to_owned()));
+            }
             None => {}
         }
 
         match self.bold_pattern.captures(&text) {
             Some(caps) => {
                 let mtch = caps.get(0).unwrap();
-                return (mtch.end(), Text::Bold(text[2..mtch.end()-2].to_owned()))
-            },
+                let end = mtch.end() - 2;
+                return (mtch.end(), Text::Bold(text[2..end].to_owned()));
+            }
             None => {}
         }
 
         match self.italic_pattern.captures(&text) {
             Some(caps) => {
                 let mtch = caps.get(0).unwrap();
-                return (mtch.end(), Text::Italic(text[1..mtch.end()-1].to_owned()))
-            },
+                let end = mtch.end() - 1;
+                return (mtch.end(), Text::Italic(text[1..end].to_owned()));
+            }
             None => {}
         };
 
         match self.strikethrough_pattern.captures(&text) {
             Some(caps) => {
                 let mtch = caps.get(0).unwrap();
-                return (mtch.end(), Text::Strikethrough(text[2..mtch.end()-2].to_owned()))
-            },
+                let end = mtch.end() - 2;
+                return (mtch.end(), Text::Strikethrough(text[2..end].to_owned()));
+            }
             None => {}
         };
         (text.len(), Text::Regular(text))
@@ -102,7 +110,7 @@ impl Tokenizer {
             line,
             cursor: 0,
             state: State::Start,
-            text_parser: TextParser::new()
+            text_parser: TextParser::new(),
         }
     }
 
