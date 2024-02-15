@@ -18,6 +18,7 @@ pub(crate) enum Token {
 enum State {
     Start,
     Process,
+    CodeBlock,
     Text,
     End,
 }
@@ -31,13 +32,22 @@ pub(crate) struct Tokenizer {
 }
 
 impl Tokenizer {
-    pub(crate) fn new(line: String) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            line,
+            line: String::default(),
             cursor: 0,
             state: State::Start,
             header_pattern: Regex::new(r"^(#{1,6})[^#]\s*(.+)$").unwrap(),
             ulist_pattern: Regex::new(r"^\s*([-*+])\s+").unwrap(),
+        }
+    }
+
+    pub(crate) fn set_line(&mut self, line: &String) {
+        println!("line: {:?}", line);
+        self.line = line.to_owned();
+        self.cursor = 0;
+        if self.state != State::CodeBlock {
+            self.state = State::Start;
         }
     }
 
@@ -54,7 +64,9 @@ impl Tokenizer {
                     _ => None,
                 };
 
-                self.state = State::End;
+                if self.state != State::CodeBlock {
+                    self.state = State::End;
+                }
                 return token;
             };
             match (current, self.state) {
@@ -76,8 +88,15 @@ impl Tokenizer {
                 ('`', State::Start) => {
                     if self.line.starts_with("```") {
                         let language = self.line.get(3..).unwrap_or_default().trim_start();
-                        self.state = State::End;
+                        self.state = State::CodeBlock;
+                        self.cursor = self.line.len();
                         return Some(Token::CodeBlock(language.to_string()));
+                    }
+                }
+                ('`', State::CodeBlock) => {
+                    if self.line.ends_with("```") {
+                        self.state = State::End;
+                        return Some(Token::CodeBlock("".to_string()));
                     }
                 }
                 (_, State::Start) => {
@@ -86,6 +105,10 @@ impl Tokenizer {
                 }
                 ('_' | '*' | '~', State::Process) => {
                     return self.handle_text_modifier();
+                }
+                (_, State::CodeBlock) => {
+                    self.cursor = self.line.len();
+                    return Some(Token::Literal(self.line.clone()));
                 }
                 (_, State::Process) => {
                     self.state = State::Text;
@@ -154,7 +177,8 @@ mod test {
     #[test]
     fn header1() {
         let line = "# Hello World".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Header(1)));
         let token = tokenizer.next();
@@ -165,7 +189,8 @@ mod test {
     #[test]
     fn header2() {
         let line = "## Hello World".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Header(2)));
         let token = tokenizer.next();
@@ -176,7 +201,8 @@ mod test {
     #[test]
     fn header3() {
         let line = "### Hello World".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Header(3)));
         let token = tokenizer.next();
@@ -187,7 +213,8 @@ mod test {
     #[test]
     fn header4() {
         let line = "#### Hello World".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Header(4)));
         let token = tokenizer.next();
@@ -198,7 +225,8 @@ mod test {
     #[test]
     fn header5() {
         let line = "##### Hello World".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Header(5)));
         let token = tokenizer.next();
@@ -209,7 +237,8 @@ mod test {
     #[test]
     fn header6() {
         let line = "###### Hello World".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Header(6)));
         let token = tokenizer.next();
@@ -220,7 +249,8 @@ mod test {
     #[test]
     fn header7() {
         let line = "####### Hello World".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Paragraph));
         let token = tokenizer.next();
@@ -235,7 +265,8 @@ mod test {
     #[test]
     fn header1_bold_star() {
         let line = "# **Hello World**".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Header(1)));
         let token = tokenizer.next();
@@ -250,7 +281,8 @@ mod test {
     #[test]
     fn header6_bold_underline() {
         let line = "###### __Hello World__".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Header(6)));
         let token = tokenizer.next();
@@ -266,7 +298,8 @@ mod test {
     #[test]
     fn header1_italic_star() {
         let line = "# *Hello World*".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Header(1)));
         let token = tokenizer.next();
@@ -281,7 +314,8 @@ mod test {
     #[test]
     fn header6_italic_star() {
         let line = "###### *Hello World*".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Header(6)));
         let token = tokenizer.next();
@@ -297,7 +331,8 @@ mod test {
     #[test]
     fn header1_italic_underline() {
         let line = "# _Hello World_".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Header(1)));
         let token = tokenizer.next();
@@ -312,7 +347,8 @@ mod test {
     #[test]
     fn header6_italic_underline() {
         let line = "###### _Hello World_".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Header(6)));
         let token = tokenizer.next();
@@ -328,7 +364,8 @@ mod test {
     #[test]
     fn header1_strikethrough() {
         let line = "# ~~Hello World~~".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Header(1)));
         let token = tokenizer.next();
@@ -343,7 +380,8 @@ mod test {
     #[test]
     fn header6_strikethrough() {
         let line = "###### ~~Hello World~~".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Header(6)));
         let token = tokenizer.next();
@@ -359,7 +397,8 @@ mod test {
     #[test]
     fn header1_strikethrough_bold_italic() {
         let line = "# ~~**_Hello World_**~~".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Header(1)));
         let token = tokenizer.next();
@@ -382,7 +421,8 @@ mod test {
     #[test]
     fn header6_strikethrough_bold_italic() {
         let line = "###### ~~**_Hello World_**~~".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Header(6)));
         let token = tokenizer.next();
@@ -404,9 +444,114 @@ mod test {
     }
 
     #[test]
+    fn header1_multiple_tokens() {
+        let line = "# Hello World _Italic HW_ Hello World, **Bold HW** blah blah blah ~~Strikethrough HW~~ blah blah blah ~~**_Hello World_**~~"
+            .to_string();
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Header(1)));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal("Hello World ".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Italic));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal("Italic HW".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Italic));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal(" Hello World, ".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Bold));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal("Bold HW".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Bold));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal(" blah blah blah ".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Strikethrough));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal("Strikethrough HW".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Strikethrough));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal(" blah blah blah ".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Strikethrough));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Bold));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Italic));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Italic));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Bold));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Strikethrough));
+        let token = tokenizer.next();
+        assert_eq!(token, None);
+    }
+
+    #[test]
+    fn header6_multiple_tokens() {
+        let line = "###### Hello World _Italic HW_ Hello World, **Bold HW** blah blah blah ~~Strikethrough HW~~ blah blah blah ~~**_Hello World_**~~"
+            .to_string();
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Header(6)));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal("Hello World ".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Italic));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal("Italic HW".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Italic));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal(" Hello World, ".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Bold));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal("Bold HW".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Bold));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal(" blah blah blah ".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Strikethrough));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal("Strikethrough HW".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Strikethrough));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal(" blah blah blah ".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Strikethrough));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Bold));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Italic));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Italic));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Bold));
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Strikethrough));
+        let token = tokenizer.next();
+        assert_eq!(token, None);
+    }
+
+    #[test]
     fn horizontal_rule_underline() {
         let line = "___".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::HorizontalRule));
         let token = tokenizer.next();
@@ -415,7 +560,8 @@ mod test {
     #[test]
     fn horizontal_rule_star() {
         let line = "***".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::HorizontalRule));
         let token = tokenizer.next();
@@ -424,7 +570,8 @@ mod test {
     #[test]
     fn horizontal_rule_dash() {
         let line = "---".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::HorizontalRule));
         let token = tokenizer.next();
@@ -434,7 +581,8 @@ mod test {
     #[test]
     fn ulist_dash() {
         let line = "- Hello World".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::UnorderedList));
         let token = tokenizer.next();
@@ -445,7 +593,8 @@ mod test {
     #[test]
     fn ulist_plus() {
         let line = "+ Hello World".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::UnorderedList));
         let token = tokenizer.next();
@@ -456,7 +605,8 @@ mod test {
     #[test]
     fn ulist_star() {
         let line = "* Hello World".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::UnorderedList));
         let token = tokenizer.next();
@@ -467,7 +617,8 @@ mod test {
     #[test]
     fn ulist_strikethrough_bold_italic() {
         let line = "* ~~**_Hello World_**~~".to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::UnorderedList));
         let token = tokenizer.next();
@@ -489,11 +640,12 @@ mod test {
     }
 
     #[test]
-    fn paragraph() {
+    fn paragraph_multilple_tokens() {
         let line =
             "Hello World _Italic HW_ Hello World, **Bold HW** blah blah blah ~~Strikethrough HW~~ blah blah blah ~~**_Hello World_**~~"
                 .to_string();
-        let mut tokenizer = Tokenizer::new(line);
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Paragraph));
         let token = tokenizer.next();
@@ -536,6 +688,66 @@ mod test {
         assert_eq!(token, Some(Token::Bold));
         let token = tokenizer.next();
         assert_eq!(token, Some(Token::Strikethrough));
+        let token = tokenizer.next();
+        assert_eq!(token, None);
+    }
+    #[test]
+    fn special_characters() {
+        let line = "Special characters: & < > \" '".to_string();
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line);
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Paragraph));
+        let token = tokenizer.next();
+        assert_eq!(
+            token,
+            Some(Token::Literal("Special characters: & < > \" '".to_string()))
+        );
+        let token = tokenizer.next();
+        assert_eq!(token, None);
+    }
+
+    #[test]
+    fn code_block() {
+        let line1 = "```rust".to_string();
+        let line2 = "fn main() {".to_string();
+        let line3 = "    println!(\"Hello, world!\");".to_string();
+        let line4 = "}".to_string();
+        let line5 = "```".to_string();
+        let mut tokenizer = Tokenizer::new();
+
+        tokenizer.set_line(&line1);
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::CodeBlock("rust".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, None);
+
+        tokenizer.set_line(&line2);
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal("fn main() {".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, None);
+
+        tokenizer.set_line(&line3);
+        let token = tokenizer.next();
+        assert_eq!(
+            token,
+            Some(Token::Literal(
+                "    println!(\"Hello, world!\");".to_string()
+            ))
+        );
+        let token = tokenizer.next();
+        assert_eq!(token, None);
+
+        tokenizer.set_line(&line4);
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::Literal("}".to_string())));
+        let token = tokenizer.next();
+        assert_eq!(token, None);
+
+        tokenizer.set_line(&line5);
+        let token = tokenizer.next();
+        assert_eq!(token, Some(Token::CodeBlock("".to_string())));
         let token = tokenizer.next();
         assert_eq!(token, None);
     }
