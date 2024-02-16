@@ -1,6 +1,6 @@
 use regex::Regex;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) enum Token {
     Blank,
     HorizontalRule,
@@ -172,583 +172,417 @@ impl Tokenizer {
 
 #[cfg(test)]
 mod test {
+    use std::collections::VecDeque;
+
     use super::*;
+    const HW: &str = "Hello World";
+    const MT: &str = "Hello World _Italic HW_ Hello World, **Bold HW** blah blah blah ~~Strikethrough HW~~ blah blah blah ~~**_Hello World_**~~";
+
+    const L: fn(&str) -> Token = |s| Token::Literal(s.to_string());
+    const B: fn(&str) -> [Token; 3] = |s| [Token::Bold, L(s), Token::Bold];
+    const I: fn(&str) -> [Token; 3] = |s| [Token::Italic, L(s), Token::Italic];
+    const S: fn(&str) -> [Token; 3] = |s| [Token::Strikethrough, L(s), Token::Strikethrough];
+
+    const LV: fn(&str) -> VecDeque<Token> = |s| VecDeque::from([L(s)]);
+    const BV: fn(VecDeque<Token>) -> VecDeque<Token> = |t| surround(t, Token::Bold);
+    const IV: fn(VecDeque<Token>) -> VecDeque<Token> = |t| surround(t, Token::Italic);
+    const SV: fn(VecDeque<Token>) -> VecDeque<Token> = |t| surround(t, Token::Strikethrough);
+
+    const SBIL: fn() -> VecDeque<Token> = || SV(BV(IV(LV(HW))));
+
+    fn expect_multiple_tokens(start_token: Token) -> Vec<Token> {
+        let mut tokens = vec![start_token, L("Hello World ")];
+        tokens.extend_from_slice(&I("Italic HW"));
+        tokens.push(L(" Hello World, "));
+        tokens.extend_from_slice(&B("Bold HW"));
+        tokens.push(L(" blah blah blah "));
+        tokens.extend_from_slice(&S("Strikethrough HW"));
+        tokens.push(L(" blah blah blah "));
+        build_expect_tokens(tokens, SBIL())
+    }
+
+    fn surround(vec: VecDeque<Token>, token: Token) -> VecDeque<Token> {
+        let mut vec = vec;
+        vec.push_front(token.clone());
+        vec.push_back(token);
+        vec
+    }
+
+    fn build_expect_tokens(tokens: Vec<Token>, new_tokens: VecDeque<Token>) -> Vec<Token> {
+        let mut tokens = tokens;
+        tokens.extend(new_tokens.into_iter());
+        tokens
+    }
+
+    fn assert_line(line: &str, expected_tokens: Vec<Token>) {
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.set_line(&line.to_string());
+
+        for expected_token in expected_tokens {
+            assert_eq!(tokenizer.next(), Some(expected_token));
+        }
+
+        assert_eq!(tokenizer.next(), None);
+    }
+
+    fn assert_block(lines: Vec<&str>, expected_tokens: Vec<Token>) {
+        let mut tokenizer = Tokenizer::new();
+        let mut tokens = expected_tokens.into_iter();
+
+        for line in lines {
+            tokenizer.set_line(&line.to_string());
+            while let Some(token) = tokenizer.next() {
+                assert_eq!(Some(token), tokens.next());
+            }
+        }
+        assert_eq!(tokenizer.next(), None);
+    }
 
     #[test]
     fn header1() {
-        let line = "# Hello World".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(1)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "# Hello World";
+        let expected_tokens = vec![Token::Header(1), L(HW)];
+        assert_line(line, expected_tokens);
     }
     #[test]
     fn header2() {
-        let line = "## Hello World".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(2)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "## Hello World";
+        let expected_tokens = vec![Token::Header(2), L(HW)];
+        assert_line(line, expected_tokens);
     }
     #[test]
     fn header3() {
-        let line = "### Hello World".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(3)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "### Hello World";
+        let expected_tokens = vec![Token::Header(3), L(HW)];
+        assert_line(line, expected_tokens);
     }
     #[test]
     fn header4() {
-        let line = "#### Hello World".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(4)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "#### Hello World";
+        let expected_tokens = vec![Token::Header(4), L(HW)];
+        assert_line(line, expected_tokens);
     }
     #[test]
     fn header5() {
-        let line = "##### Hello World".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(5)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "##### Hello World";
+        let expected_tokens = vec![Token::Header(5), L(HW)];
+        assert_line(line, expected_tokens);
     }
     #[test]
     fn header6() {
-        let line = "###### Hello World".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(6)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "###### Hello World";
+        let expected_tokens = vec![Token::Header(6), L(HW)];
+        assert_line(line, expected_tokens);
     }
     #[test]
     fn header7() {
-        let line = "####### Hello World".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Paragraph));
-        let token = tokenizer.next();
-        assert_eq!(
-            token,
-            Some(Token::Literal("####### Hello World".to_string()))
-        );
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "####### Hello World";
+        let expected_tokens = vec![Token::Paragraph, L("####### Hello World")];
+        assert_line(line, expected_tokens);
     }
 
     #[test]
     fn header1_bold_star() {
-        let line = "# **Hello World**".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(1)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "# **Hello World**";
+        let mut expected_tokens = vec![Token::Header(1)];
+        expected_tokens.extend_from_slice(&B(HW));
+        assert_line(line, expected_tokens);
+    }
+    #[test]
+    fn header2_bold_star() {
+        let line = "## **Hello World**";
+        let mut expected_tokens = vec![Token::Header(2)];
+        expected_tokens.extend_from_slice(&B(HW));
+        assert_line(line, expected_tokens);
+    }
+    #[test]
+    fn header3_bold_star() {
+        let line = "### **Hello World**";
+        let mut expected_tokens = vec![Token::Header(3)];
+        expected_tokens.extend_from_slice(&B(HW));
+        assert_line(line, expected_tokens);
+    }
+    #[test]
+    fn header4_bold_star() {
+        let line = "#### **Hello World**";
+        let mut expected_tokens = vec![Token::Header(4)];
+        expected_tokens.extend_from_slice(&B(HW));
+        assert_line(line, expected_tokens);
+    }
+    #[test]
+    fn header5_bold_star() {
+        let line = "##### **Hello World**";
+        let mut expected_tokens = vec![Token::Header(5)];
+        expected_tokens.extend_from_slice(&B(HW));
+        assert_line(line, expected_tokens);
     }
     #[test]
     fn header6_bold_underline() {
-        let line = "###### __Hello World__".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(6)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "###### __Hello World__";
+        let mut expected_tokens = vec![Token::Header(6)];
+        expected_tokens.extend_from_slice(&B(HW));
+        assert_line(&line, expected_tokens);
     }
 
     #[test]
     fn header1_italic_star() {
-        let line = "# *Hello World*".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(1)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "# *Hello World*";
+        let mut expected_tokens = vec![Token::Header(1)];
+        expected_tokens.extend_from_slice(&I(HW));
+        assert_line(&line, expected_tokens);
+    }
+    #[test]
+    fn header2_italic_star() {
+        let line = "## *Hello World*";
+        let mut expected_tokens = vec![Token::Header(2)];
+        expected_tokens.extend_from_slice(&I(HW));
+        assert_line(&line, expected_tokens);
+    }
+    #[test]
+    fn header3_italic_star() {
+        let line = "### *Hello World*";
+        let mut expected_tokens = vec![Token::Header(3)];
+        expected_tokens.extend_from_slice(&I(HW));
+        assert_line(&line, expected_tokens);
+    }
+    #[test]
+    fn header4_italic_star() {
+        let line = "#### *Hello World*";
+        let mut expected_tokens = vec![Token::Header(4)];
+        expected_tokens.extend_from_slice(&I(HW));
+        assert_line(&line, expected_tokens);
+    }
+    #[test]
+    fn header5_italic_star() {
+        let line = "##### *Hello World*";
+        let mut expected_tokens = vec![Token::Header(5)];
+        expected_tokens.extend_from_slice(&I(HW));
+        assert_line(&line, expected_tokens);
     }
     #[test]
     fn header6_italic_star() {
-        let line = "###### *Hello World*".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(6)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "###### *Hello World*";
+        let mut expected_tokens = vec![Token::Header(6)];
+        expected_tokens.extend_from_slice(&I(HW));
+        assert_line(&line, expected_tokens);
     }
 
     #[test]
     fn header1_italic_underline() {
-        let line = "# _Hello World_".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(1)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "# _Hello World_";
+        let mut expected_tokens = vec![Token::Header(1)];
+        expected_tokens.extend_from_slice(&I(HW));
+        assert_line(&line, expected_tokens);
+    }
+
+    #[test]
+    fn header2_italic_underline() {
+        let line = "## _Hello World_";
+        let mut expected_tokens = vec![Token::Header(2)];
+        expected_tokens.extend_from_slice(&I(HW));
+        assert_line(&line, expected_tokens);
+    }
+    #[test]
+    fn header3_italic_underline() {
+        let line = "### _Hello World_";
+        let mut expected_tokens = vec![Token::Header(3)];
+        expected_tokens.extend_from_slice(&I(HW));
+        assert_line(&line, expected_tokens);
+    }
+    #[test]
+    fn header4_italic_underline() {
+        let line = "#### _Hello World_";
+        let mut expected_tokens = vec![Token::Header(4)];
+        expected_tokens.extend_from_slice(&I(HW));
+        assert_line(&line, expected_tokens);
+    }
+    #[test]
+    fn header5_italic_underline() {
+        let line = "##### _Hello World_";
+        let mut expected_tokens = vec![Token::Header(5)];
+        expected_tokens.extend_from_slice(&I(HW));
+        assert_line(&line, expected_tokens);
     }
     #[test]
     fn header6_italic_underline() {
-        let line = "###### _Hello World_".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(6)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "###### _Hello World_";
+        let mut expected_tokens = vec![Token::Header(6)];
+        expected_tokens.extend_from_slice(&I(HW));
+        assert_line(&line, expected_tokens);
     }
 
     #[test]
     fn header1_strikethrough() {
-        let line = "# ~~Hello World~~".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(1)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "# ~~Hello World~~";
+        let mut expected_tokens = vec![Token::Header(1)];
+        expected_tokens.extend_from_slice(&S(HW));
+        assert_line(&line, expected_tokens);
     }
+
+    #[test]
+    fn header2_strikethrough() {
+        let line = "## ~~Hello World~~";
+        let mut expected_tokens = vec![Token::Header(2)];
+        expected_tokens.extend_from_slice(&S(HW));
+        assert_line(&line, expected_tokens);
+    }
+
+    #[test]
+    fn header3_strikethrough() {
+        let line = "### ~~Hello World~~";
+        let mut expected_tokens = vec![Token::Header(3)];
+        expected_tokens.extend_from_slice(&S(HW));
+        assert_line(&line, expected_tokens);
+    }
+
+    #[test]
+    fn header4_strikethrough() {
+        let line = "#### ~~Hello World~~";
+        let mut expected_tokens = vec![Token::Header(4)];
+        expected_tokens.extend_from_slice(&S(HW));
+        assert_line(&line, expected_tokens);
+    }
+
+    #[test]
+    fn header5_strikethrough() {
+        let line = "##### ~~Hello World~~";
+        let mut expected_tokens = vec![Token::Header(5)];
+        expected_tokens.extend_from_slice(&S(HW));
+        assert_line(&line, expected_tokens);
+    }
+
     #[test]
     fn header6_strikethrough() {
-        let line = "###### ~~Hello World~~".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(6)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "###### ~~Hello World~~";
+        let mut expected_tokens = vec![Token::Header(6)];
+        expected_tokens.extend_from_slice(&S(HW));
+        assert_line(&line, expected_tokens);
     }
 
     #[test]
     fn header1_strikethrough_bold_italic() {
-        let line = "# ~~**_Hello World_**~~".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(1)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "# ~~**_Hello World_**~~";
+        let expected_tokens = build_expect_tokens(vec![Token::Header(1)], SBIL());
+        assert_line(&line, expected_tokens);
+    }
+    #[test]
+    fn header2_strikethrough_bold_italic() {
+        let line = "## ~~**_Hello World_**~~";
+        let expected_tokens = build_expect_tokens(vec![Token::Header(2)], SBIL());
+        assert_line(&line, expected_tokens);
+    }
+    #[test]
+    fn header3_strikethrough_bold_italic() {
+        let line = "### ~~**_Hello World_**~~";
+        let expected_tokens = build_expect_tokens(vec![Token::Header(3)], SBIL());
+        assert_line(&line, expected_tokens);
+    }
+    #[test]
+    fn header4_strikethrough_bold_italic() {
+        let line = "#### ~~**_Hello World_**~~";
+        let expected_tokens = build_expect_tokens(vec![Token::Header(4)], SBIL());
+        assert_line(&line, expected_tokens);
+    }
+    #[test]
+    fn header5_strikethrough_bold_italic() {
+        let line = "##### ~~**_Hello World_**~~";
+        let expected_tokens = build_expect_tokens(vec![Token::Header(5)], SBIL());
+        assert_line(&line, expected_tokens);
     }
     #[test]
     fn header6_strikethrough_bold_italic() {
-        let line = "###### ~~**_Hello World_**~~".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(6)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "###### ~~**_Hello World_**~~";
+        let expected_tokens = build_expect_tokens(vec![Token::Header(6)], SBIL());
+        assert_line(&line, expected_tokens);
     }
 
     #[test]
     fn header1_multiple_tokens() {
-        let line = "# Hello World _Italic HW_ Hello World, **Bold HW** blah blah blah ~~Strikethrough HW~~ blah blah blah ~~**_Hello World_**~~"
-            .to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(1)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World ".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Italic HW".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal(" Hello World, ".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Bold HW".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal(" blah blah blah ".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Strikethrough HW".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal(" blah blah blah ".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "# ".to_owned() + MT;
+        let expected_tokens = expect_multiple_tokens(Token::Header(1));
+        assert_line(&line, expected_tokens);
     }
 
     #[test]
     fn header6_multiple_tokens() {
-        let line = "###### Hello World _Italic HW_ Hello World, **Bold HW** blah blah blah ~~Strikethrough HW~~ blah blah blah ~~**_Hello World_**~~"
-            .to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Header(6)));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World ".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Italic HW".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal(" Hello World, ".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Bold HW".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal(" blah blah blah ".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Strikethrough HW".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal(" blah blah blah ".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "###### ".to_owned() + MT;
+
+        let expected_tokens = expect_multiple_tokens(Token::Header(6));
+        assert_line(&line, expected_tokens);
     }
 
     #[test]
     fn horizontal_rule_underline() {
-        let line = "___".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::HorizontalRule));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "___";
+        let expected_tokens = vec![Token::HorizontalRule];
+        assert_line(&line, expected_tokens);
     }
     #[test]
     fn horizontal_rule_star() {
-        let line = "***".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::HorizontalRule));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "***";
+        let expected_tokens = vec![Token::HorizontalRule];
+        assert_line(&line, expected_tokens);
     }
     #[test]
     fn horizontal_rule_dash() {
-        let line = "---".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::HorizontalRule));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "---";
+        let expected_tokens = vec![Token::HorizontalRule];
+        assert_line(&line, expected_tokens);
     }
 
     #[test]
     fn ulist_dash() {
-        let line = "- Hello World".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::UnorderedList));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "- Hello World";
+        let expected_tokens = vec![Token::UnorderedList, L(HW)];
+        assert_line(&line, expected_tokens);
     }
     #[test]
     fn ulist_plus() {
-        let line = "+ Hello World".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::UnorderedList));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "+ Hello World";
+        let expected_tokens = vec![Token::UnorderedList, L(HW)];
+        assert_line(&line, expected_tokens);
     }
     #[test]
     fn ulist_star() {
-        let line = "* Hello World".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::UnorderedList));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "* Hello World";
+        let expected_tokens = vec![Token::UnorderedList, L(HW)];
+        assert_line(&line, expected_tokens);
     }
     #[test]
     fn ulist_strikethrough_bold_italic() {
-        let line = "* ~~**_Hello World_**~~".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::UnorderedList));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "* ~~**_Hello World_**~~";
+        let expected_tokens = build_expect_tokens(vec![Token::UnorderedList], SBIL());
+        assert_line(&line, expected_tokens);
     }
 
     #[test]
     fn paragraph_multilple_tokens() {
-        let line =
-            "Hello World _Italic HW_ Hello World, **Bold HW** blah blah blah ~~Strikethrough HW~~ blah blah blah ~~**_Hello World_**~~"
-                .to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Paragraph));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World ".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Italic HW".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal(" Hello World, ".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Bold HW".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal(" blah blah blah ".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Strikethrough HW".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal(" blah blah blah ".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("Hello World".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Italic));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Bold));
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Strikethrough));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let expected_tokens = expect_multiple_tokens(Token::Paragraph);
+        assert_line(&MT, expected_tokens);
     }
     #[test]
     fn special_characters() {
-        let line = "Special characters: & < > \" '".to_string();
-        let mut tokenizer = Tokenizer::new();
-        tokenizer.set_line(&line);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Paragraph));
-        let token = tokenizer.next();
-        assert_eq!(
-            token,
-            Some(Token::Literal("Special characters: & < > \" '".to_string()))
-        );
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let line = "Special characters: & < > \" '";
+        let expected_tokens = vec![Token::Paragraph, L("Special characters: & < > \" '")];
+        assert_line(&line, expected_tokens);
     }
 
     #[test]
     fn code_block() {
-        let line1 = "```rust".to_string();
-        let line2 = "fn main() {".to_string();
-        let line3 = "    println!(\"Hello, world!\");".to_string();
-        let line4 = "}".to_string();
-        let line5 = "```".to_string();
-        let mut tokenizer = Tokenizer::new();
+        let line1 = "```rust";
+        let line2 = "fn main() {";
+        let line3 = "    println!(\"Hello, world!\");";
+        let line4 = "}";
+        let line5 = "```";
 
-        tokenizer.set_line(&line1);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::CodeBlock("rust".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
-
-        tokenizer.set_line(&line2);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("fn main() {".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
-
-        tokenizer.set_line(&line3);
-        let token = tokenizer.next();
-        assert_eq!(
-            token,
-            Some(Token::Literal(
-                "    println!(\"Hello, world!\");".to_string()
-            ))
-        );
-        let token = tokenizer.next();
-        assert_eq!(token, None);
-
-        tokenizer.set_line(&line4);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::Literal("}".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
-
-        tokenizer.set_line(&line5);
-        let token = tokenizer.next();
-        assert_eq!(token, Some(Token::CodeBlock("".to_string())));
-        let token = tokenizer.next();
-        assert_eq!(token, None);
+        let lines = vec![line1, line2, line3, line4, line5];
+        let expected_tokens = vec![
+            Token::CodeBlock("rust".to_string()),
+            Token::Literal("fn main() {".to_string()),
+            Token::Literal("    println!(\"Hello, world!\");".to_string()),
+            Token::Literal("}".to_string()),
+            Token::CodeBlock("".to_string()),
+        ];
+        assert_block(lines, expected_tokens);
     }
 }
