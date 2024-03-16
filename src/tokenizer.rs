@@ -6,6 +6,7 @@ pub(crate) enum Token {
     HorizontalRule,
     UnorderedList,
     Paragraph,
+    BreakLine,
     Bold,
     Italic,
     Strikethrough,
@@ -19,6 +20,7 @@ enum State {
     Start,
     Process,
     CodeBlock,
+    BreakLine,
     Text,
     End,
 }
@@ -26,6 +28,7 @@ enum State {
 pub(crate) struct Tokenizer {
     line: String,
     cursor: usize,
+    literal_start: usize,
     state: State,
     header_pattern: Regex,
     ulist_pattern: Regex,
@@ -36,6 +39,7 @@ impl Tokenizer {
         Self {
             line: String::default(),
             cursor: 0,
+            literal_start: 0,
             state: State::Start,
             header_pattern: Regex::new(r"^(#{1,6})[^#]\s*(.+)$").unwrap(),
             ulist_pattern: Regex::new(r"^\s*([-*+])\s+").unwrap(),
@@ -46,43 +50,98 @@ impl Tokenizer {
         println!("line: {:?}", line);
         self.line = line.to_owned();
         self.cursor = 0;
-        if self.state != State::CodeBlock {
-            self.state = State::Start;
+        self.state = match self.state {
+            State::CodeBlock => State::CodeBlock,
+            State::BreakLine => State::Text,
+            _ => State::Start,
         }
     }
 
     pub(crate) fn next(&mut self) -> Option<Token> {
-        let mut literal_start = 0;
         loop {
-            let Some(current) = self.line.chars().nth(self.cursor) else {
-                let token = match self.state {
-                    State::Text => {
-                        let literal = self.line[literal_start..self.cursor].to_string();
-                        Some(Token::Literal(literal))
-                    }
-                    State::Start => Some(Token::Blank),
-                    _ => None,
-                };
-
-                if self.state != State::CodeBlock {
-                    self.state = State::End;
-                }
-                return token;
-            };
+            let current = self.line.chars().nth(self.cursor).unwrap_or_default();
             match (current, self.state) {
+                ('\0', State::End) => return None,
+                ('\0', State::Start) => {
+                    self.state = State::End;
+                    return Some(Token::Blank);
+                }
+                ('\0', State::Text) => {
+                    self.state = State::End;
+                    if self.cursor > self.literal_start {
+                        return Some(self.build_literal());
+                    }
+                }
+
+                ('\0', _) => return None,
+                (' ', State::Start | State::CodeBlock) => {
+                    self.cursor += 1;
+                }
+                (' ', State::BreakLine) => {
+                    self.cursor = self.line.len();
+                    return Some(Token::BreakLine);
+                }
+                (' ', State::Text) => {
+                    if self.is_breakline() {
+                        self.state = State::BreakLine;
+                        return Some(self.build_literal());
+                    }
+                    self.cursor += 1;
+                }
                 ('#', State::Start) => {
                     self.state = State::Process;
                     return Some(self.handle_header());
                 }
-                (' ' | '\t' | '-' | '_' | '*' | '+', State::Start) => {
+                ('-' | '_' | '*' | '+' | '~', State::Process) => {
+                    self.state = State::Text;
+                    self.literal_start = self.cursor;
+
+                    let next = self.line.chars().nth(self.cursor + 1).unwrap_or_default();
+                    self.cursor += 2;
+
+                    let token = match (current, next) {
+                        ('~', '~') => Token::Strikethrough,
+                        ('*', '*') => Token::Bold,
+                        ('_', '_') => Token::Bold,
+                        _ => {
+                            self.cursor -= 1;
+                            Token::Italic
+                        }
+                    };
+
+                    self.literal_start = self.cursor;
+                    return Some(token);
+                }
+                ('-' | '_' | '*' | '+', State::Start) => {
                     if let Some(token) = self.handle_horizontal_rule() {
                         self.state = State::End;
                         return Some(token);
                     }
 
+                    self.state = State::Text;
+                    self.literal_start = self.cursor;
+
+                    let next = self.line.chars().nth(self.cursor + 1).unwrap_or_default();
+                    self.cursor += 2;
+
+                    let token = match (current, next) {
+                        ('~', '~') => Token::Strikethrough,
+                        ('*', '*') => Token::Bold,
+                        ('_', '_') => Token::Bold,
+                        (_, ' ') => Token::UnorderedList,
+                        _ => {
+                            self.cursor -= 1;
+                            Token::Italic
+                        }
+                    };
+
+                    self.literal_start = self.cursor;
+                    return Some(token);
+                }
+                ('_' | '*' | '~', State::Text) => {
                     self.state = State::Process;
-                    if let Some(token) = self.handle_ulist() {
-                        return Some(token);
+                    if self.cursor > self.literal_start {
+                        return Some(self.build_literal());
                     }
                 }
                 ('`', State::Start) => {
@@ -99,34 +158,38 @@ impl Tokenizer {
                         return Some(Token::CodeBlock("".to_string()));
                     }
                 }
-                (_, State::Start) => {
-                    self.state = State::Process;
-                    return Some(Token::Paragraph);
-                }
-                ('_' | '*' | '~', State::Process) => {
-                    return self.handle_text_modifier();
-                }
                 (_, State::CodeBlock) => {
                     self.cursor = self.line.len();
                     return Some(Token::Literal(self.line.clone()));
                 }
                 (_, State::Process) => {
                     self.state = State::Text;
-                    literal_start = self.cursor;
-                }
-                ('_' | '*' | '~', State::Text) => {
-                    let literal = self.line[literal_start..self.cursor].to_string();
-                    self.state = State::Process;
-                    return Some(Token::Literal(literal));
+                    self.literal_start = self.cursor;
                 }
                 (_, State::Text) => {
                     self.cursor += 1;
+                }
+                (_, State::Start) => {
+                    self.state = State::Process;
+                    return Some(Token::Paragraph);
                 }
                 (_, _) => {
                     return None;
                 }
             }
         }
+    }
+
+    fn build_literal(&self) -> Token {
+        let literal = self.line[self.literal_start..self.cursor].to_string();
+        Token::Literal(literal)
+    }
+
+    fn is_breakline(&self) -> bool {
+        let next = self.line.chars().nth(self.cursor + 1).unwrap_or_default();
+        let last = self.line.chars().nth(self.cursor + 2).unwrap_or_default();
+
+        last == '\0' && next == ' '
     }
 
     fn handle_header(&mut self) -> Token {
@@ -138,28 +201,6 @@ impl Tokenizer {
         self.cursor += caps[1].len() + 1;
 
         Token::Header(level)
-    }
-
-    fn handle_text_modifier(&mut self) -> Option<Token> {
-        let current = self.line.chars().nth(self.cursor)?;
-        let next = self.line.chars().nth(self.cursor + 1).unwrap_or_default();
-
-        self.cursor += 2;
-        match (current, next) {
-            ('~', '~') => Some(Token::Strikethrough),
-            ('*', '*') => Some(Token::Bold),
-            ('_', '_') => Some(Token::Bold),
-            _ => {
-                self.cursor -= 1;
-                Some(Token::Italic)
-            }
-        }
-    }
-
-    fn handle_ulist(&mut self) -> Option<Token> {
-        let caps = self.ulist_pattern.captures(&self.line)?;
-        self.cursor += caps[0].len();
-        Some(Token::UnorderedList)
     }
 
     fn handle_horizontal_rule(&mut self) -> Option<Token> {
@@ -556,7 +597,7 @@ mod test {
     }
 
     #[test]
-    fn paragraph_multilple_tokens() {
+    fn paragraph_multiple_tokens() {
         let expected_tokens = expect_multiple_tokens(Token::Paragraph);
         assert_line(&MT, expected_tokens);
     }
